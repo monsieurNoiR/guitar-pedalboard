@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Guitar Pedalboard - ギター初心者エフェクターボード
 
-## Getting Started
+スマホ縦持ち完全最適化のギターエフェクターシミュレーターです。初心者でも30秒でエフェクターの違いがわかる！
 
-First, run the development server:
+## Features
+
+- **完全無音スタート** - タップするまで音が鳴らないので電車でも安心
+- **5種類のエフェクター** - OD / DS / CH / DL / RV
+- **リアルタイム処理** - Web Audio APIでエフェクトをリアルタイム適用
+- **シェア機能** - 自分のペダル設定をXでシェア可能
+
+## エフェクター一覧
+
+| 略称 | 名前 | 説明 |
+|------|------|------|
+| OD | OVER DRIVE | 音を温かく歪ませる。ブルース系に最適 |
+| DS | DISTORTION | 激しく歪ませる。ロック・メタル向け |
+| CH | CHORUS | 音を揺らして広がりを出す。クリーン向け |
+| DL | DELAY | やまびこ効果。音に奥行きを加える |
+| RV | REVERB | 残響効果。広い空間にいるような音 |
+
+## Setup
+
+### 必要なファイル
+
+以下のファイルを `public/` フォルダに配置してください：
+
+- `public/guitar.svg` - ギターのイラスト画像
+- `public/clean-guitar.wav` - クリーンギター音源（ループ再生用）
+
+### インストール
+
+```bash
+npm install
+```
+
+### 開発サーバー起動
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### ビルド
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Tech Stack
 
-## Learn More
+- Next.js 16
+- TypeScript
+- Tailwind CSS
+- Web Audio API
 
-To learn more about Next.js, take a look at the following resources:
+## License
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT

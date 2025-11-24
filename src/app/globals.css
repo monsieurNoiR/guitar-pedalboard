@@ -1,26 +1,212 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --pedal-bg: #2d2d2d;
+  --pedal-border: #4a4a4a;
+  --led-off: #3d1a1a;
+  --led-on: #ff3333;
+  --switch-bg: #1a1a1a;
+  --slider-track: #4a4a4a;
+  --slider-thumb: #888;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  min-height: 100dvh;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+/* カスタムスライダー */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  width: 100%;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, #333, #555);
+  height: 8px;
+  border-radius: 4px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -8px;
+  background: linear-gradient(145deg, #888, #666);
+  height: 24px;
+  width: 24px;
+  border-radius: 50%;
+  border: 2px solid #999;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+
+input[type="range"]::-moz-range-track {
+  background: linear-gradient(to right, #333, #555);
+  height: 8px;
+  border-radius: 4px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  background: linear-gradient(145deg, #888, #666);
+  height: 24px;
+  width: 24px;
+  border-radius: 50%;
+  border: 2px solid #999;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+}
+
+/* ペダルスタイル */
+.pedal-card {
+  background: linear-gradient(145deg, #3a3a3a, #2a2a2a);
+  border: 3px solid #4a4a4a;
+  border-radius: 12px;
+  box-shadow:
+    0 8px 16px rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+/* フットスイッチ */
+.footswitch {
+  background: linear-gradient(145deg, #222, #111);
+  border: 4px solid #333;
+  border-radius: 50%;
+  box-shadow:
+    0 4px 8px rgba(0,0,0,0.6),
+    inset 0 2px 4px rgba(0,0,0,0.8);
+  transition: all 0.1s ease;
+}
+
+.footswitch:active {
+  transform: scale(0.95);
+  box-shadow:
+    0 2px 4px rgba(0,0,0,0.4),
+    inset 0 2px 4px rgba(0,0,0,0.8);
+}
+
+/* LED */
+.led {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transition: all 0.15s ease;
+}
+
+.led-off {
+  background: radial-gradient(circle at 30% 30%, #4a2020, #2a1010);
+  box-shadow: 0 0 2px rgba(0,0,0,0.5);
+}
+
+.led-on {
+  background: radial-gradient(circle at 30% 30%, #ff6666, #ff0000);
+  box-shadow: 0 0 8px #ff0000, 0 0 16px #ff000088;
+  animation: led-glow 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes led-glow {
+  from { box-shadow: 0 0 8px #ff0000, 0 0 16px #ff000088; }
+  to { box-shadow: 0 0 12px #ff0000, 0 0 24px #ff0000aa; }
+}
+
+/* 弦の振動アニメーション */
+@keyframes vibrate-1 {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(-1px); }
+  75% { transform: translateY(1px); }
+}
+
+@keyframes vibrate-2 {
+  0%, 100% { transform: translateY(0); }
+  25% { transform: translateY(1px); }
+  75% { transform: translateY(-1px); }
+}
+
+@keyframes vibrate-3 {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-0.5px); }
+}
+
+.string-vibrate-1 {
+  animation: vibrate-1 0.05s ease-in-out infinite;
+}
+
+.string-vibrate-2 {
+  animation: vibrate-2 0.04s ease-in-out infinite;
+}
+
+.string-vibrate-3 {
+  animation: vibrate-3 0.06s ease-in-out infinite;
+}
+
+/* ミュートボタン */
+.mute-btn {
+  background: linear-gradient(145deg, #cc4444, #aa2222);
+  border: 2px solid #ff6666;
+  box-shadow: 0 2px 8px rgba(255,0,0,0.3);
+  transition: all 0.15s ease;
+}
+
+.mute-btn:active {
+  transform: scale(0.95);
+}
+
+/* タップエリア */
+.tap-area {
+  background: radial-gradient(circle at center, rgba(255,255,255,0.1) 0%, transparent 70%);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* モーダル */
+.modal-overlay {
+  background: rgba(0,0,0,0.8);
+  backdrop-filter: blur(4px);
+}
+
+/* シェアボタン */
+.share-btn {
+  background: linear-gradient(145deg, #1da1f2, #1991db);
+  box-shadow: 0 4px 12px rgba(29,161,242,0.4);
+}
+
+.share-btn:active {
+  transform: scale(0.95);
+}
+
+/* ギター再生中アニメーション */
+.guitar-playing {
+  animation: guitar-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes guitar-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 10px rgba(74, 222, 128, 0.3));
+  }
+  50% {
+    transform: scale(1.02);
+    filter: drop-shadow(0 0 20px rgba(74, 222, 128, 0.5));
+  }
+}
+
+/* サウンドバーアニメーション */
+@keyframes sound-bar {
+  0% { height: 8px; }
+  100% { height: 24px; }
 }
