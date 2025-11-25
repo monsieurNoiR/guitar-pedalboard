@@ -12,10 +12,13 @@ export interface PedalState {
   amount: number;
 }
 
+export type AudioSource = "a" | "b" | "c";
+
 export interface AudioEngineState {
   isPlaying: boolean;
   isInitialized: boolean;
   pedals: PedalState[];
+  currentSource: AudioSource;
 }
 
 const DEFAULT_PEDALS: PedalState[] = [
@@ -113,6 +116,7 @@ export function useAudioEngine() {
     isPlaying: false,
     isInitialized: false,
     pedals: DEFAULT_PEDALS,
+    currentSource: "a",
   });
 
   // ディストーションカーブを作成
@@ -154,15 +158,15 @@ export function useAudioEngine() {
   }, []);
 
   // WAVファイルをロード
-  const loadAudioFile = useCallback(async (audioContext: AudioContext) => {
+  const loadAudioFile = useCallback(async (audioContext: AudioContext, source: AudioSource = "a") => {
     try {
-      const response = await fetch("/clean-guitar.wav");
+      const response = await fetch(`/clean-${source}.wav`);
       const arrayBuffer = await response.arrayBuffer();
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
       audioBufferRef.current = audioBuffer;
       return audioBuffer;
     } catch (error) {
-      console.error("Failed to load audio file:", error);
+      console.error(`Failed to load audio file: clean-${source}.wav`, error);
       return null;
     }
   }, []);
@@ -174,8 +178,8 @@ export function useAudioEngine() {
     const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     audioContextRef.current = audioContext;
 
-    // WAVファイルをロード
-    await loadAudioFile(audioContext);
+    // WAVファイルをロード（デフォルトはA）
+    await loadAudioFile(audioContext, "a");
 
     // マスターゲイン
     const masterGain = audioContext.createGain();
@@ -372,7 +376,7 @@ export function useAudioEngine() {
 
     // AudioBufferがなければロード
     if (!audioBufferRef.current) {
-      await loadAudioFile(audioContext);
+      await loadAudioFile(audioContext, state.currentSource);
     }
 
     if (!audioBufferRef.current) {
@@ -389,7 +393,7 @@ export function useAudioEngine() {
     sourceNodeRef.current = source;
 
     setState((prev) => ({ ...prev, isPlaying: true }));
-  }, [initialize, loadAudioFile]);
+  }, [initialize, loadAudioFile, state.currentSource]);
 
   // 停止
   const stop = useCallback(() => {
@@ -539,6 +543,47 @@ export function useAudioEngine() {
     });
   }, []);
 
+  // 音源切り替え
+  const switchSource = useCallback(async (source: AudioSource) => {
+    const wasPlaying = state.isPlaying;
+
+    // 現在再生中なら停止
+    if (sourceNodeRef.current) {
+      try {
+        sourceNodeRef.current.stop();
+      } catch {
+        // 既に停止している場合は無視
+      }
+      sourceNodeRef.current = null;
+    }
+
+    // 新しい音源をロード
+    if (audioContextRef.current) {
+      await loadAudioFile(audioContextRef.current, source);
+    }
+
+    // 状態を更新
+    setState((prev) => ({ ...prev, currentSource: source, isPlaying: false }));
+
+    // 再生中だった場合は自動的に再開
+    if (wasPlaying && audioContextRef.current && inputGainRef.current && audioBufferRef.current) {
+      const audioContext = audioContextRef.current;
+
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
+
+      const sourceNode = audioContext.createBufferSource();
+      sourceNode.buffer = audioBufferRef.current;
+      sourceNode.loop = true;
+      sourceNode.connect(inputGainRef.current);
+      sourceNode.start();
+      sourceNodeRef.current = sourceNode;
+
+      setState((prev) => ({ ...prev, isPlaying: true }));
+    }
+  }, [loadAudioFile, state.isPlaying]);
+
   // クリーンアップ
   useEffect(() => {
     return () => {
@@ -571,6 +616,7 @@ export function useAudioEngine() {
     togglePedal,
     setPedalAmount,
     setPedalsState,
+    switchSource,
     initialize,
   };
 }

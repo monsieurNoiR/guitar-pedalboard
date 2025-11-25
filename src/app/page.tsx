@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import GuitarIllustration from "@/components/GuitarIllustration";
+import AudioSourceSelector from "@/components/AudioSourceSelector";
 import Pedal from "@/components/Pedal";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 
@@ -11,11 +12,13 @@ function PedalboardContent() {
   const {
     isPlaying,
     pedals,
+    currentSource,
     play,
     stop,
     togglePedal,
     setPedalAmount,
     setPedalsState,
+    switchSource,
   } = useAudioEngine();
 
   const [showHeadphoneModal, setShowHeadphoneModal] = useState(false);
@@ -113,6 +116,14 @@ function PedalboardContent() {
       {/* ギターイラスト */}
       <section className="flex-shrink-0 py-4 flex justify-center">
         <GuitarIllustration isPlaying={isPlaying} onTap={handleTap} />
+      </section>
+
+      {/* 音源選択 */}
+      <section className="flex-shrink-0">
+        <AudioSourceSelector
+          currentSource={currentSource}
+          onSourceChange={switchSource}
+        />
       </section>
 
       {/* ペダルボード */}
