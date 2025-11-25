@@ -103,6 +103,11 @@ function PedalboardContent() {
             </button>
           )}
         </div>
+
+        {/* 説明文 */}
+        <p className="px-4 pt-2 text-sm text-gray-300 leading-relaxed">
+          ギターを始めたばかりの初心者さんが「エフェクターって何？」ってなったときに、もの凄くザックリとそれぞれのエフェクターのイメージを掴む参考になるかも知れないページです。
+        </p>
       </header>
 
       {/* ギターイラスト */}
