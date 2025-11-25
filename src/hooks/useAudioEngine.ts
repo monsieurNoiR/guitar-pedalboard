@@ -20,6 +20,15 @@ export interface AudioEngineState {
 
 const DEFAULT_PEDALS: PedalState[] = [
   {
+    id: "cmp",
+    name: "COMPRESSOR",
+    shortName: "CMP",
+    description: "音の強弱を均等にして弾きやすくする",
+    color: "#0019ff",
+    enabled: false,
+    amount: 50,
+  },
+  {
     id: "od",
     name: "OVER DRIVE",
     shortName: "OD",
@@ -74,6 +83,10 @@ export function useAudioEngine() {
   const masterGainRef = useRef<GainNode | null>(null);
 
   // エフェクトノード
+  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
+  const cmpMixRef = useRef<GainNode | null>(null);
+  const cmpDryRef = useRef<GainNode | null>(null);
+
   const odGainRef = useRef<WaveShaperNode | null>(null);
   const odMixRef = useRef<GainNode | null>(null);
   const odDryRef = useRef<GainNode | null>(null);
@@ -175,6 +188,23 @@ export function useAudioEngine() {
     inputGain.gain.setValueAtTime(1.0, audioContext.currentTime);
     inputGainRef.current = inputGain;
 
+    // === コンプレッサー ===
+    const compressor = audioContext.createDynamicsCompressor();
+    compressor.threshold.setValueAtTime(-24, audioContext.currentTime);
+    compressor.knee.setValueAtTime(30, audioContext.currentTime);
+    compressor.ratio.setValueAtTime(12, audioContext.currentTime);
+    compressor.attack.setValueAtTime(0.003, audioContext.currentTime);
+    compressor.release.setValueAtTime(0.25, audioContext.currentTime);
+    compressorRef.current = compressor;
+
+    const cmpMix = audioContext.createGain();
+    cmpMix.gain.setValueAtTime(0, audioContext.currentTime);
+    cmpMixRef.current = cmpMix;
+
+    const cmpDry = audioContext.createGain();
+    cmpDry.gain.setValueAtTime(1, audioContext.currentTime);
+    cmpDryRef.current = cmpDry;
+
     // === オーバードライブ ===
     const odShaper = audioContext.createWaveShaper();
     odShaper.curve = makeDistortionCurve(0.3, "od");
@@ -260,11 +290,20 @@ export function useAudioEngine() {
     reverbDryRef.current = reverbDry;
 
     // シグナルチェーンを構築
-    // Input -> OD -> DS -> Chorus -> Delay -> Reverb -> Master
+    // Input -> CMP -> OD -> DS -> Chorus -> Delay -> Reverb -> Master
+
+    // CMP
+    inputGain.connect(cmpDry);
+    inputGain.connect(compressor);
+    compressor.connect(cmpMix);
 
     // OD
-    inputGain.connect(odDry);
-    inputGain.connect(odShaper);
+    const afterCmp = audioContext.createGain();
+    cmpDry.connect(afterCmp);
+    cmpMix.connect(afterCmp);
+
+    afterCmp.connect(odDry);
+    afterCmp.connect(odShaper);
     odShaper.connect(odMix);
 
     // DS
@@ -377,6 +416,12 @@ export function useAudioEngine() {
           const amount = pedal.amount / 100;
 
           switch (pedalId) {
+            case "cmp":
+              if (cmpMixRef.current && cmpDryRef.current) {
+                cmpMixRef.current.gain.setValueAtTime(newEnabled ? 1 : 0, audioContextRef.current?.currentTime || 0);
+                cmpDryRef.current.gain.setValueAtTime(newEnabled ? 0 : 1, audioContextRef.current?.currentTime || 0);
+              }
+              break;
             case "od":
               if (odMixRef.current && odDryRef.current) {
                 odMixRef.current.gain.setValueAtTime(newEnabled ? amount : 0, audioContextRef.current?.currentTime || 0);
@@ -427,6 +472,15 @@ export function useAudioEngine() {
 
           if (pedal.enabled) {
             switch (pedalId) {
+              case "cmp":
+                if (compressorRef.current) {
+                  // amountでthresholdとratioを調整
+                  const threshold = -50 + normalizedAmount * 26; // -50dB to -24dB
+                  const ratio = 1 + normalizedAmount * 19; // 1 to 20
+                  compressorRef.current.threshold.setValueAtTime(threshold, audioContextRef.current?.currentTime || 0);
+                  compressorRef.current.ratio.setValueAtTime(ratio, audioContextRef.current?.currentTime || 0);
+                }
+                break;
               case "od":
                 if (odMixRef.current && odDryRef.current && odGainRef.current) {
                   odMixRef.current.gain.setValueAtTime(normalizedAmount, audioContextRef.current?.currentTime || 0);
