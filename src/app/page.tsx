@@ -1,95 +1,174 @@
-"use client";
+/**
+ * 【メインページコンポーネント】
+ * このファイルは、ギターエフェクターボードアプリの画面全体を組み立てています。
+ *
+ * 主な役割：
+ * - ギターのイラストを表示
+ * - 6種類のエフェクターペダルを縦に並べて表示
+ * - 音源の再生/停止を制御
+ * - ペダルのON/OFF切り替えを管理
+ * - URLでペダル設定を共有する機能
+ */
 
+"use client"; // このファイルはブラウザ上で動くコンポーネントであることを宣言
+
+// React（画面を作るための部品）から必要な機能をインポート
 import { useEffect, useState, useCallback, Suspense } from "react";
+// URLのパラメータを読み取る機能をインポート
 import { useSearchParams } from "next/navigation";
+// 各パーツ（コンポーネント）をインポート
 import GuitarIllustration from "@/components/GuitarIllustration";
 import AudioSourceSelector from "@/components/AudioSourceSelector";
 import Pedal from "@/components/Pedal";
+// 音を鳴らすための機能をインポート
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 
+/**
+ * 【ペダルボードのメインコンポーネント】
+ * アプリの中身（ギター、ペダル、ボタンなど）を実際に表示する部分
+ */
 function PedalboardContent() {
+  // URLのパラメータ（?config=xxx の部分）を取得
   const searchParams = useSearchParams();
+
+  // useAudioEngine から音を鳴らすための機能を取得
   const {
-    isPlaying,
-    pedals,
-    currentSource,
-    play,
-    stop,
-    togglePedal,
-    setPedalAmount,
-    setPedalsState,
-    switchSource,
+    isPlaying,        // 今、音が鳴っているかどうか（true/false）
+    pedals,           // 6つのペダルの状態（ON/OFF、つまみの位置など）
+    currentSource,    // 今選ばれている音源（A/B/C）
+    play,             // 音を鳴らす関数
+    stop,             // 音を止める関数
+    togglePedal,      // ペダルをON/OFFする関数
+    setPedalAmount,   // ペダルのつまみを動かす関数
+    setPedalsState,   // すべてのペダルの設定を一度に変更する関数
+    switchSource,     // 音源を切り替える関数（A→B→Cなど）
   } = useAudioEngine();
 
+  // ヘッドホン推奨モーダルを表示するかどうかの状態管理
   const [showHeadphoneModal, setShowHeadphoneModal] = useState(false);
+  // 一度でもモーダルを表示したかどうかの状態管理
   const [hasShownModal, setHasShownModal] = useState(false);
 
-  // URLパラメータから設定を復元
+  /**
+   * 【URLパラメータから設定を復元する処理】
+   * URLに ?c=xxx が付いていたら、そのペダル設定を読み込む
+   * これにより、他の人がシェアした設定を再現できる
+   *
+   * 新形式: ?c=od:75,ds:80 （OD 75%とDS 80%がON）
+   * 旧形式: ?config=base64データ （互換性のため残す）
+   */
   useEffect(() => {
-    const config = searchParams.get("config");
-    if (config) {
+    // 新形式のパラメータをチェック（例: ?c=od:75,ds:80）
+    const compactConfig = searchParams.get("c");
+    if (compactConfig) {
       try {
-        const decoded = JSON.parse(atob(config));
+        // "od:75,ds:80" のような形式から設定を復元
+        const enabledPedals = compactConfig.split(",").map((item) => {
+          const [id, amount] = item.split(":");
+          return {
+            id,
+            enabled: true,
+            amount: parseInt(amount, 10),
+          };
+        });
+        setPedalsState(enabledPedals);
+      } catch {
+        // エラーが起きた場合は無視
+      }
+      return;
+    }
+
+    // 旧形式のパラメータをチェック（互換性のため）
+    const oldConfig = searchParams.get("config");
+    if (oldConfig) {
+      try {
+        // Base64でエンコードされた文字列をデコードして、JSON形式に変換
+        const decoded = JSON.parse(atob(oldConfig));
         if (Array.isArray(decoded)) {
+          // デコードした設定をペダルに適用
           setPedalsState(decoded);
         }
       } catch {
-        // 無効な設定は無視
+        // エラーが起きた場合（不正なURLなど）は無視する
       }
     }
   }, [searchParams, setPedalsState]);
 
-  // タップで再生開始
+  /**
+   * 【ギターをタップしたときの処理】
+   * ギターのイラストをタップすると音が鳴り始める
+   */
   const handleTap = useCallback(() => {
-    if (!isPlaying) {
-      // 初回のみヘッドホン推奨モーダルを表示
+    if (!isPlaying) { // まだ音が鳴っていない場合
+      // 初回のみヘッドホン推奨モーダル（ポップアップ）を表示
       if (!hasShownModal) {
-        setShowHeadphoneModal(true);
-        setHasShownModal(true);
+        setShowHeadphoneModal(true); // モーダルを表示
+        setHasShownModal(true);      // 「もう表示した」という記録を残す
       }
-      play();
+      play(); // 音を鳴らす
     }
   }, [isPlaying, play, hasShownModal]);
 
-  // ミュート（停止）
+  /**
+   * 【ミュートボタンを押したときの処理】
+   * 音を止める
+   */
   const handleMute = useCallback(() => {
-    stop();
+    stop(); // 音を止める
   }, [stop]);
 
-  // シェアURL生成
+  /**
+   * 【シェアボタンを押したときの処理】
+   * 現在のペダル設定をURLに変換して、Xでシェアする
+   *
+   * URLを短くするため、ONになっているペダルの情報だけを保存します。
+   * 形式: ペダルID:つまみ位置 （例: "od:75,ds:80" → OD 75%、DS 80%がON）
+   */
   const handleShare = useCallback(() => {
-    const config = pedals.map((p) => ({
-      id: p.id,
-      enabled: p.enabled,
-      amount: p.amount,
-    }));
-    const encoded = btoa(JSON.stringify(config));
-    const url = `${window.location.origin}${window.location.pathname}?config=${encoded}`;
+    // ONになっているペダルだけを抽出して、コンパクトな形式に変換
+    // 例: "od:75,ds:80" のような形式
+    const config = pedals
+      .filter((p) => p.enabled)                           // ONのペダルだけ
+      .map((p) => `${p.id}:${p.amount}`)                  // "id:amount"形式に
+      .join(",");                                         // カンマで繋ぐ
 
+    // 設定が空（全部OFFの場合）なら、URLパラメータなしにする
+    const url = config
+      ? `${window.location.origin}${window.location.pathname}?c=${config}`
+      : `${window.location.origin}${window.location.pathname}`;
+
+    // Xに投稿する文章を作成
     const text = `ギターエフェクターボードをカスタマイズしたよ！\n${
       pedals
-        .filter((p) => p.enabled)
-        .map((p) => `${p.shortName}: ${p.amount}%`)
-        .join(" / ") || "クリーントーン"
+        .filter((p) => p.enabled)                    // ONになっているペダルだけ抽出
+        .map((p) => `${p.shortName}: ${p.amount}%`)  // 「OD: 50%」のような形式に
+        .join(" / ") || "クリーントーン"            // 何もONじゃなければ「クリーントーン」
     }`;
 
+    // Xのツイート画面を開くURLを作成
     const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
       text
     )}&url=${encodeURIComponent(url)}`;
 
+    // 新しいタブでXのツイート画面を開く
     window.open(twitterUrl, "_blank");
   }, [pedals]);
 
+  /**
+   * ここから下は、画面に表示される HTML の構造（見た目）を定義している部分です。
+   * JSXという記法で書かれており、HTMLとJavaScriptを組み合わせたような構文です。
+   */
   return (
     <main className="min-h-dvh flex flex-col">
-      {/* ヘッダー */}
+      {/* === ヘッダー（画面上部の固定エリア） === */}
       <header className="sticky top-0 z-50 bg-gradient-to-b from-[#1a1a2e] to-transparent pb-4">
         <div className="flex items-center justify-between px-4 pt-4">
+          {/* アプリのタイトル */}
           <h1 className="text-white text-lg font-bold">
             ギターエフェクターボード
           </h1>
 
-          {/* ミュートボタン（再生中のみ表示） */}
+          {/* ミュートボタン（音が鳴っている時だけ表示される） */}
           {isPlaying && (
             <button
               className="mute-btn px-4 py-2 rounded-full text-white text-sm font-bold flex items-center gap-2"
@@ -107,18 +186,21 @@ function PedalboardContent() {
           )}
         </div>
 
-        {/* 説明文 */}
+        {/* アプリの説明文 */}
         <p className="px-4 pt-2 text-sm text-gray-300 leading-relaxed">
           ギターを始めたばかりの初心者さんが「エフェクターって何？」ってなったときに、もの凄くザックリとそれぞれのエフェクターのイメージを掴む参考になるかも知れないページです。
         </p>
       </header>
 
-      {/* ギターイラスト */}
+      {/* === ギターイラストエリア === */}
+      {/* タップすると音が鳴る。isPlaying（再生中かどうか）を渡している */}
       <section className="flex-shrink-0 py-4 flex justify-center">
         <GuitarIllustration isPlaying={isPlaying} onTap={handleTap} />
       </section>
 
-      {/* 音源選択 */}
+      {/* === 音源選択エリア（A/B/Cボタン） === */}
+      {/* currentSource: 今選ばれている音源（A/B/C） */}
+      {/* onSourceChange: 音源を切り替える関数 */}
       <section className="flex-shrink-0">
         <AudioSourceSelector
           currentSource={currentSource}
@@ -126,7 +208,7 @@ function PedalboardContent() {
         />
       </section>
 
-      {/* ペダルボード */}
+      {/* === ペダルボードエリア（6つのエフェクターが並ぶ場所） === */}
       <section className="flex-1 px-3 pb-24 space-y-3 overflow-y-auto">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-white text-sm font-semibold opacity-70">
@@ -137,17 +219,19 @@ function PedalboardContent() {
           </span>
         </div>
 
+        {/* 6つのペダル（CMP, OD, DS, CH, DL, RV）をリストで表示 */}
+        {/* pedals.map() で配列の各要素に対してPedalコンポーネントを生成 */}
         {pedals.map((pedal) => (
           <Pedal
-            key={pedal.id}
-            pedal={pedal}
-            onToggle={() => togglePedal(pedal.id)}
-            onAmountChange={(amount) => setPedalAmount(pedal.id, amount)}
+            key={pedal.id}                                              // 各ペダルを識別するためのキー
+            pedal={pedal}                                               // ペダルの情報（名前、色、ON/OFF状態など）
+            onToggle={() => togglePedal(pedal.id)}                      // このペダルをON/OFFする関数
+            onAmountChange={(amount) => setPedalAmount(pedal.id, amount)} // つまみを動かしたときの関数
           />
         ))}
       </section>
 
-      {/* シェアボタン */}
+      {/* === シェアボタン（画面下部に固定） === */}
       <footer className="fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#16213e] to-transparent">
         <button
           className="share-btn w-full py-3 rounded-xl text-white font-bold flex items-center justify-center gap-2"
@@ -160,15 +244,16 @@ function PedalboardContent() {
         </button>
       </footer>
 
-      {/* ヘッドホン推奨モーダル */}
+      {/* === ヘッドホン推奨モーダル（ポップアップ） === */}
+      {/* showHeadphoneModal が true の時だけ表示される */}
       {showHeadphoneModal && (
         <div
           className="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4"
-          onClick={() => setShowHeadphoneModal(false)}
+          onClick={() => setShowHeadphoneModal(false)} // 背景をクリックしたら閉じる
         >
           <div
             className="bg-gray-800 rounded-2xl p-6 max-w-sm w-full text-center"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()} // モーダル内のクリックは背景に伝えない
           >
             <div className="text-5xl mb-4">🎧</div>
             <h2 className="text-white text-xl font-bold mb-2">
@@ -192,15 +277,22 @@ function PedalboardContent() {
   );
 }
 
+/**
+ * 【Homeコンポーネント - アプリのエントリーポイント】
+ * Suspenseを使って、画面の読み込み中は「Loading...」を表示する
+ * 読み込みが完了したらPedalboardContentを表示する
+ */
 export default function Home() {
   return (
     <Suspense
       fallback={
+        // 読み込み中に表示される画面
         <div className="min-h-dvh flex items-center justify-center">
           <div className="text-white">Loading...</div>
         </div>
       }
     >
+      {/* 実際のアプリ画面 */}
       <PedalboardContent />
     </Suspense>
   );

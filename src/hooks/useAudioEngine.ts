@@ -1,35 +1,68 @@
+/**
+ * 【オーディオエンジン - 音を鳴らす仕組みの中核】
+ *
+ * このファイルは、ブラウザの Web Audio API を使ってギターの音を鳴らし、
+ * 6種類のエフェクター（コンプレッサー、オーバードライブ、ディストーション、
+ * コーラス、ディレイ、リバーブ）を実際に音に適用する処理を行っています。
+ *
+ * 主な役割：
+ * - WAVファイル（ギター音源）の読み込みと再生
+ * - 6種類のエフェクター処理の実装
+ * - ペダルのON/OFF切り替え
+ * - つまみ（Amount）の調整による音の変化
+ * - 音源（A/B/C）の切り替え
+ */
+
 "use client";
 
 import { useCallback, useRef, useEffect, useState } from "react";
 
+// ===== 型定義（データの形を決めている部分） =====
+
+/**
+ * 【ペダルの状態を表す型】
+ * 各エフェクターペダルが持っている情報
+ */
 export interface PedalState {
-  id: string;
-  name: string;
-  shortName: string;
-  description: string;
-  color: string;
-  enabled: boolean;
-  amount: number;
+  id: string;          // ペダルのID（cmp, od, ds, ch, dl, rv）
+  name: string;        // ペダルの名前（COMPRESSOR, OVER DRIVE など）
+  shortName: string;   // 短縮名（CMP, OD など）
+  description: string; // 説明文
+  color: string;       // ペダルの色（16進数カラーコード）
+  enabled: boolean;    // ON/OFFの状態
+  amount: number;      // つまみの位置（0〜100）
 }
 
+/**
+ * 【音源の種類】
+ * A、B、Cの3種類の音源を切り替えられる
+ */
 export type AudioSource = "a" | "b" | "c";
 
+/**
+ * 【オーディオエンジン全体の状態】
+ */
 export interface AudioEngineState {
-  isPlaying: boolean;
-  isInitialized: boolean;
-  pedals: PedalState[];
-  currentSource: AudioSource;
+  isPlaying: boolean;      // 今、音が鳴っているか
+  isInitialized: boolean;  // オーディオエンジンの初期化が完了したか
+  pedals: PedalState[];    // 6つのペダルの状態の配列
+  currentSource: AudioSource; // 現在選択されている音源（A/B/C）
 }
 
+/**
+ * 【6つのペダルの初期設定】
+ * アプリを開いたときの各ペダルの初期状態を定義
+ * すべてOFF（enabled: false）でつまみは50%の位置からスタート
+ */
 const DEFAULT_PEDALS: PedalState[] = [
   {
     id: "cmp",
     name: "COMPRESSOR",
     shortName: "CMP",
     description: "音の強弱を均等にして弾きやすくする",
-    color: "#0019ff",
-    enabled: false,
-    amount: 50,
+    color: "#0019ff",  // 青色
+    enabled: false,    // 最初はOFF
+    amount: 50,        // つまみは真ん中（50%）
   },
   {
     id: "od",
@@ -78,60 +111,94 @@ const DEFAULT_PEDALS: PedalState[] = [
   },
 ];
 
+/**
+ * 【useAudioEngine - メインのフック関数】
+ *
+ * このフック（関数）は、音を鳴らすために必要なすべての機能を提供します。
+ * Web Audio APIという、ブラウザに標準搭載されている音声処理の仕組みを使っています。
+ *
+ * 【Web Audio APIとは？】
+ * ブラウザで音を鳴らしたり、エフェクトをかけたりするための機能。
+ * 音の流れは「ノード」という部品を繋いで作ります。
+ *
+ * 例：音源ノード → エフェクトノード → 音量調整ノード → スピーカー
+ *
+ * 【useRefとは？】
+ * Reactで「値を保持する箱」を作る機能。画面が再描画されても中身は残ります。
+ * Web Audio APIのノード（部品）を入れておくために使っています。
+ */
 export function useAudioEngine() {
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioBufferRef = useRef<AudioBuffer | null>(null);
-  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
-  const inputGainRef = useRef<GainNode | null>(null);
-  const masterGainRef = useRef<GainNode | null>(null);
+  // ===== Web Audio APIの基本部品を入れる箱 =====
+  const audioContextRef = useRef<AudioContext | null>(null);           // 全体の管理者（オーディオコンテキスト）
+  const audioBufferRef = useRef<AudioBuffer | null>(null);             // 読み込んだ音源データ
+  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);    // 音を再生するノード
+  const inputGainRef = useRef<GainNode | null>(null);                  // 入力音量調整ノード
+  const masterGainRef = useRef<GainNode | null>(null);                 // 最終的な音量調整ノード
 
-  // エフェクトノード
-  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
-  const cmpMixRef = useRef<GainNode | null>(null);
-  const cmpDryRef = useRef<GainNode | null>(null);
+  // ===== 各エフェクターのノード（部品）を入れる箱 =====
+  // 【コンプレッサー用】
+  const compressorRef = useRef<DynamicsCompressorNode | null>(null);  // コンプレッサー本体
+  const cmpMixRef = useRef<GainNode | null>(null);                    // エフェクトをかけた音
+  const cmpDryRef = useRef<GainNode | null>(null);                    // エフェクトをかけていない音（ドライ）
 
-  const odGainRef = useRef<WaveShaperNode | null>(null);
-  const odMixRef = useRef<GainNode | null>(null);
-  const odDryRef = useRef<GainNode | null>(null);
+  // 【オーバードライブ用】
+  const odGainRef = useRef<WaveShaperNode | null>(null);              // 音を歪ませるノード
+  const odMixRef = useRef<GainNode | null>(null);                     // エフェクト音
+  const odDryRef = useRef<GainNode | null>(null);                     // ドライ音
 
-  const dsGainRef = useRef<WaveShaperNode | null>(null);
-  const dsMixRef = useRef<GainNode | null>(null);
-  const dsDryRef = useRef<GainNode | null>(null);
+  // 【ディストーション用】
+  const dsGainRef = useRef<WaveShaperNode | null>(null);              // 音を激しく歪ませるノード
+  const dsMixRef = useRef<GainNode | null>(null);                     // エフェクト音
+  const dsDryRef = useRef<GainNode | null>(null);                     // ドライ音
 
-  const chorusDelayRef = useRef<DelayNode | null>(null);
-  const chorusLfoRef = useRef<OscillatorNode | null>(null);
-  const chorusMixRef = useRef<GainNode | null>(null);
-  const chorusDryRef = useRef<GainNode | null>(null);
+  // 【コーラス用】
+  const chorusDelayRef = useRef<DelayNode | null>(null);              // 遅延ノード
+  const chorusLfoRef = useRef<OscillatorNode | null>(null);           // 揺らぎを作る発振器（LFO）
+  const chorusMixRef = useRef<GainNode | null>(null);                 // エフェクト音
+  const chorusDryRef = useRef<GainNode | null>(null);                 // ドライ音
 
-  const delayNodeRef = useRef<DelayNode | null>(null);
-  const delayFeedbackRef = useRef<GainNode | null>(null);
-  const delayMixRef = useRef<GainNode | null>(null);
-  const delayDryRef = useRef<GainNode | null>(null);
+  // 【ディレイ用】
+  const delayNodeRef = useRef<DelayNode | null>(null);                // 遅延ノード（やまびこ）
+  const delayFeedbackRef = useRef<GainNode | null>(null);             // フィードバック（繰り返し）の量
+  const delayMixRef = useRef<GainNode | null>(null);                  // エフェクト音
+  const delayDryRef = useRef<GainNode | null>(null);                  // ドライ音
 
-  const reverbConvolverRef = useRef<ConvolverNode | null>(null);
-  const reverbMixRef = useRef<GainNode | null>(null);
-  const reverbDryRef = useRef<GainNode | null>(null);
+  // 【リバーブ用】
+  const reverbConvolverRef = useRef<ConvolverNode | null>(null);      // 畳み込みリバーブノード
+  const reverbMixRef = useRef<GainNode | null>(null);                 // エフェクト音
+  const reverbDryRef = useRef<GainNode | null>(null);                 // ドライ音
 
+  // ===== アプリの状態管理 =====
   const [state, setState] = useState<AudioEngineState>({
-    isPlaying: false,
-    isInitialized: false,
-    pedals: DEFAULT_PEDALS,
-    currentSource: "a",
+    isPlaying: false,        // 最初は音が鳴っていない
+    isInitialized: false,    // 最初は初期化されていない
+    pedals: DEFAULT_PEDALS,  // ペダルは初期設定の状態
+    currentSource: "a",      // 音源はAからスタート
   });
 
-  // ディストーションカーブを作成
+  /**
+   * 【ディストーションカーブを作成する関数】
+   *
+   * オーバードライブやディストーションは、音を「歪ませる」エフェクトです。
+   * この関数は、どのように音を歪ませるかを決める「カーブ（曲線）」を作ります。
+   *
+   * @param amount - エフェクトの強さ（0〜1）
+   * @param type - "od"（オーバードライブ）か "ds"（ディストーション）
+   * @returns 歪み具合を表すカーブデータ
+   */
   const makeDistortionCurve = useCallback((amount: number, type: "od" | "ds") => {
-    const samples = 44100;
-    const curve = new Float32Array(samples);
+    const samples = 44100;                      // サンプル数（カーブの細かさ）
+    const curve = new Float32Array(samples);    // カーブデータを入れる配列
     const deg = Math.PI / 180;
 
+    // 各サンプルポイントでの歪み具合を計算
     for (let i = 0; i < samples; i++) {
-      const x = (i * 2) / samples - 1;
+      const x = (i * 2) / samples - 1;  // -1 〜 1 の範囲の値
       if (type === "od") {
-        // ソフトクリッピング（オーバードライブ）
+        // ソフトクリッピング（オーバードライブ）- 緩やかに歪む
         curve[i] = ((3 + amount * 10) * x * 20 * deg) / (Math.PI + amount * 10 * Math.abs(x));
       } else {
-        // ハードクリッピング（ディストーション）
+        // ハードクリッピング（ディストーション）- 激しく歪む
         const k = amount * 50 + 1;
         curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
       }
@@ -139,7 +206,15 @@ export function useAudioEngine() {
     return curve;
   }, []);
 
-  // インパルスレスポンスを生成（リバーブ用）
+  /**
+   * 【インパルスレスポンスを生成する関数（リバーブ用）】
+   *
+   * リバーブ（残響）は、音が空間で反射して響く効果です。
+   * この関数は、ノイズを使って疑似的な反響データを作ります。
+   *
+   * @param duration - 残響の長さ（秒）
+   * @param decay - 減衰の速さ（大きいほどゆっくり消える）
+   */
   const createImpulseResponse = useCallback((duration: number, decay: number) => {
     if (!audioContextRef.current) return null;
 
@@ -157,12 +232,24 @@ export function useAudioEngine() {
     return impulse;
   }, []);
 
-  // WAVファイルをロード
+  /**
+   * 【WAVファイルをロードする関数】
+   *
+   * public フォルダにある clean-a.wav、clean-b.wav、clean-c.wav を読み込んで、
+   * 再生できる形式（AudioBuffer）に変換します。
+   *
+   * @param audioContext - オーディオコンテキスト
+   * @param source - 音源の種類（"a", "b", "c"）
+   */
   const loadAudioFile = useCallback(async (audioContext: AudioContext, source: AudioSource = "a") => {
     try {
+      // ファイルを取得（例: /clean-a.wav）
       const response = await fetch(`/clean-${source}.wav`);
+      // バイナリデータに変換
       const arrayBuffer = await response.arrayBuffer();
+      // 音声データとしてデコード（再生できる形に変換）
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      // 読み込んだ音源を保存
       audioBufferRef.current = audioBuffer;
       return audioBuffer;
     } catch (error) {
@@ -171,23 +258,36 @@ export function useAudioEngine() {
     }
   }, []);
 
-  // オーディオエンジンの初期化
+  /**
+   * 【オーディオエンジンの初期化】
+   *
+   * この関数は、アプリで音を鳴らすための準備をします。
+   * 以下のことを行います：
+   * 1. AudioContext（音の管理者）を作成
+   * 2. WAVファイル（ギター音源）を読み込み
+   * 3. 6種類のエフェクターノードを作成
+   * 4. すべてのノードを正しい順番で繋ぐ
+   *
+   * 音の流れ：
+   * 音源 → 入力 → CMP → OD → DS → Chorus → Delay → Reverb → マスター → スピーカー
+   */
   const initialize = useCallback(async () => {
-    if (audioContextRef.current) return;
+    if (audioContextRef.current) return; // すでに初期化済みなら何もしない
 
+    // AudioContextを作成（ブラウザによって名前が違うので両方対応）
     const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     audioContextRef.current = audioContext;
 
-    // WAVファイルをロード（デフォルトはA）
+    // WAVファイルをロード（最初は音源Aを読み込む）
     await loadAudioFile(audioContext, "a");
 
-    // マスターゲイン
+    // === マスターゲイン（最終的な音量調整） ===
     const masterGain = audioContext.createGain();
-    masterGain.gain.setValueAtTime(0.7, audioContext.currentTime);
-    masterGain.connect(audioContext.destination);
+    masterGain.gain.setValueAtTime(0.7, audioContext.currentTime); // 音量70%
+    masterGain.connect(audioContext.destination);                   // スピーカーに接続
     masterGainRef.current = masterGain;
 
-    // 入力ゲイン
+    // === 入力ゲイン（エフェクトに送る前の音量調整） ===
     const inputGain = audioContext.createGain();
     inputGain.gain.setValueAtTime(1.0, audioContext.currentTime);
     inputGainRef.current = inputGain;
@@ -350,22 +450,30 @@ export function useAudioEngine() {
     reverbDry.connect(masterGain);
     reverbMix.connect(masterGain);
 
+    // 初期化完了！
     setState((prev) => ({ ...prev, isInitialized: true }));
   }, [makeDistortionCurve, createImpulseResponse, loadAudioFile]);
 
-  // 再生開始
+  /**
+   * 【音を鳴らす関数】
+   *
+   * ギターのイラストをタップしたときに呼ばれます。
+   * 読み込んだ音源をループ再生します。
+   */
   const play = useCallback(async () => {
+    // まだ初期化されていなければ初期化を実行
     if (!audioContextRef.current || !inputGainRef.current) {
       await initialize();
     }
 
     const audioContext = audioContextRef.current!;
 
+    // AudioContextが一時停止状態なら再開
     if (audioContext.state === "suspended") {
       await audioContext.resume();
     }
 
-    // 既存のソースを停止
+    // すでに音が鳴っていたら一度停止
     if (sourceNodeRef.current) {
       try {
         sourceNodeRef.current.stop();
@@ -374,7 +482,7 @@ export function useAudioEngine() {
       }
     }
 
-    // AudioBufferがなければロード
+    // 音源がまだ読み込まれていなければロード
     if (!audioBufferRef.current) {
       await loadAudioFile(audioContext, state.currentSource);
     }
@@ -384,32 +492,47 @@ export function useAudioEngine() {
       return;
     }
 
-    // 新しいソースノードを作成（ループ再生）
+    // === 音源ノードを作成してループ再生 ===
     const source = audioContext.createBufferSource();
-    source.buffer = audioBufferRef.current;
-    source.loop = true;
-    source.connect(inputGainRef.current!);
-    source.start();
-    sourceNodeRef.current = source;
+    source.buffer = audioBufferRef.current;  // 読み込んだ音源をセット
+    source.loop = true;                      // ループ再生ON
+    source.connect(inputGainRef.current!);   // 入力ゲインに接続
+    source.start();                          // 再生開始！
+    sourceNodeRef.current = source;          // 参照を保存
 
+    // 状態を「再生中」に更新
     setState((prev) => ({ ...prev, isPlaying: true }));
   }, [initialize, loadAudioFile, state.currentSource]);
 
-  // 停止
+  /**
+   * 【音を止める関数】
+   * ミュートボタンを押したときに呼ばれます。
+   */
   const stop = useCallback(() => {
     if (sourceNodeRef.current) {
       try {
-        sourceNodeRef.current.stop();
+        sourceNodeRef.current.stop(); // 音源ノードを停止
       } catch {
         // 既に停止している場合は無視
       }
-      sourceNodeRef.current = null;
+      sourceNodeRef.current = null; // 参照をクリア
     }
 
+    // 状態を「停止中」に更新
     setState((prev) => ({ ...prev, isPlaying: false }));
   }, []);
 
-  // ペダルのON/OFF切り替え
+  /**
+   * 【ペダルのON/OFF切り替え関数】
+   *
+   * ペダルのフットスイッチをタップしたときに呼ばれます。
+   * ペダルのON/OFF状態を反転させ、エフェクトのMix（かかり具合）を調整します。
+   *
+   * 各エフェクターは「Dry（原音）」と「Mix（エフェクト音）」を持っていて、
+   * ONにすると Mix の音量を上げ、OFFにすると 0 にします。
+   *
+   * @param pedalId - 操作するペダルのID（cmp, od, ds, ch, dl, rv）
+   */
   const togglePedal = useCallback((pedalId: string) => {
     setState((prev) => {
       const newPedals = prev.pedals.map((pedal) => {
